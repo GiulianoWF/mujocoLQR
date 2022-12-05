@@ -4,6 +4,8 @@
 #include "sstream"
 #include <iostream>
 
+#include "mjderivative.h"
+
 // template <typename Derived>
 // void LogEigen(std::unique_ptr<ILogger>& l, const Derived& b)
 // {
@@ -45,7 +47,8 @@ Controller::Controller(mjData * data, mjModel* model)
     ,Q                       (new double [(2*model->nv)*(2*model->nv)])
     ,Q_pos                   (new double [model->nv*model->nv])
     ,P                       (new double [(2*model->nv)*(2*model->nv)])
-    ,actuated                (new int32_t[model->nv])
+    ,actuated                (new int32_t [model->nv])
+    ,deriv_mem               (new double [model->nv*(2*model->nv+model->nu)+2*model->nv+model->nu])
     ,eInertiaMatrix             (data->actuator_moment, model->nv, model->nu)
     ,eMotorForceMatrix          (data->ctrl, model->nu, 1)
     ,eVelocityMatrix            (data->qvel, 1, model->nv)
@@ -63,6 +66,7 @@ Controller::Controller(mjData * data, mjModel* model)
     ,eQpos                      (this->Q_pos, model->nv, model->nv)
     ,eQ_joint                   (this->Q_joint, model->nv, model->nv)
     ,eP                         (this->P, 2*model->nv, 2*model->nv)
+    ,eDqacc_Dctrl               (this->deriv_mem + (2*model->nv*model->nv), model->nv, model->nu)
 {
     this->eQ_joint = Eigen::MatrixXd::Identity(m->nv, m->nv);
     this->eR = Eigen::MatrixXd::Identity(m->nu, m->nu);
@@ -193,6 +197,7 @@ void Controller::CalculateControlSetpoint()
         {
             std::cout << "\t" << d->qacc[i] << "\n";
         }
+        this->CalculateUnderactuatedControlSetpoint();
     }
     // #endif
 }
@@ -210,8 +215,10 @@ void Controller::CalculateUnderactuatedControlSetpoint()
         //============================================================
         this->CalculateDerivative();
 
-        eDqacc_Dctrl = Eigen::MatrixXd::Constant(m->nu, m->nv, 0.01);
-        eMotorForceMatrix = eMotorForceMatrix + (eDqacc_Dctrl * step);
+        std::cout << "Error\n" <<  (eDesiredBodyForceMatrix - eOutputBodyForce) << "\n\n";
+        std::cout << "derivatives\n" << eDqacc_Dctrl << "\n\n";
+        std::cout << "Actuator diff\n" << (eDesiredBodyForceMatrix - eOutputBodyForce).transpose() * eDqacc_Dctrl << "\n\n";
+        eMotorForceMatrix = eMotorForceMatrix + ((eDesiredBodyForceMatrix - eOutputBodyForce).transpose() * eDqacc_Dctrl).transpose();
 
         //============================================================
         //              Calculate new acc
@@ -221,16 +228,32 @@ void Controller::CalculateUnderactuatedControlSetpoint()
         //============================================================
         //              Break if control is good
         //============================================================
+        // if((eDesiredBodyForceMatrix - eOutputBodyForce).isMuchSmallerThan(0.5))
+        // {
+        //     break;
+        // }
+        std::cout << "Desired   " << eDesiredBodyForceMatrix.transpose() 
+        << "\nActual    " << eOutputBodyForce.transpose()
+        << "\nControl   " << eMotorForceMatrix.transpose() << std::endl;
         if((eDesiredBodyForceMatrix - eOutputBodyForce).isMuchSmallerThan(0.5))
         {
+            std::cout << "\nFound a good setpoint" << std::endl;
             break;
+        }
+        else
+        {
+            std::cout << "\nDid not found a good setpoint, acceleration with this setpoint:" << std::endl;
+            for (int i = 0; i <= m->nu; ++i)
+            {
+                std::cout << "\t" << d->qacc[i] << "\n";
+            }
         }
     }
 }
 
 void Controller::CalculateDerivative()
 {
-
+    calcMJDerivatives(m, d, deriv_mem, nullptr);
 }
 
 void Controller::CalculateLQR()

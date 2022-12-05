@@ -27,6 +27,7 @@ public:
     double * P                  = nullptr;
 
     int32_t * actuated         = nullptr;
+    double * deriv_mem         = nullptr;
 
     Eigen::Map<Eigen::MatrixXd> eInertiaMatrix;
     Eigen::Map<Eigen::MatrixXd> eMotorForceMatrix;
@@ -45,6 +46,8 @@ public:
     Eigen::Map<Eigen::MatrixXd> eQ;
     Eigen::Map<Eigen::MatrixXd> eQpos;
     Eigen::Map<Eigen::MatrixXd> eP;
+    
+    Eigen::Map<Eigen::MatrixXd> eDqacc_Dctrl;
 
     Eigen::MatrixXd eAT;
     Eigen::MatrixXd eBT;
@@ -56,7 +59,6 @@ public:
     Eigen::MatrixXd eBT_eP;
     Eigen::MatrixXd temp_eK;
     Eigen::MatrixXd eAT_eP;
-    Eigen::MatrixXd eDqacc_Dctrl;
 
     mjModel* m = nullptr;
     mjData*  d = nullptr;

@@ -6,6 +6,7 @@
 #include "mujoco/mujoco.h"
 
 #include "mjderivative.h"
+#include <iostream>
 
 void cpMjData(const mjModel* m, mjData* d_dest, const mjData* d_src)
 {
@@ -77,7 +78,11 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
 
     // set output forward dynamics
     mjtNum* output = d->qacc;
+    #ifdef LQROPTIMIZE
     mjtNum costCenter = stepCostFn(dmain);
+    #else
+    mjtNum costCenter = 0;
+    #endif
 
     // save output for center point and warmstart (needed in forward only)
     mju_copy(warmstart, d->qacc_warmstart, nv);
@@ -92,15 +97,24 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
         // perturb selected target +
         d->ctrl[i] = dmain->ctrl[i] + eps;
 
+        std::cout << "Perturbed control " << i << "  " << d->ctrl[i] << std::endl;
+
+        #ifdef LQROPTIMIZE
         // get cost for perturbation
         deriv[2*nv*nv + nv*nu + 2*nv + i] = (stepCostFn(d) - costCenter)/eps;
+        #endif
 
         // evaluate dynamics, with center warmstart
         mju_copy(d->qacc_warmstart, warmstart, m->nv);
         mj_forwardSkip(m, d, mjSTAGE_VEL, 1);
 
         // copy and store +perturbation
-        mju_copy(temp, output, nv);
+        for( int j=0; j<nv; j++ )
+        {
+            std::cout << "d->qacc[" << j << "] == " << d->qacc[j] << std::endl;
+        }
+
+        mju_copy(temp, d->qacc, nv);
 
         // perturb selected target -
         cpMjData(m, d, dmain);
@@ -112,11 +126,18 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
 
         // compute column i of derivative 2
         for( int j=0; j<nv; j++ )
-            deriv[2*nv*nv + i + j*nu] = (temp[j] - output[j])/(2*eps);
+        {
+            deriv[2*nv*nv + i + j*nu] = (temp[j] - d->qacc[j])/(2*eps);
+            std::cout << deriv[2*nv*nv + i + j*nu] << " ";
+        }
 
         // undo perturbation
         cpMjData(m, d, dmain);
     }
+
+    #ifndef LQROPTIMIZE
+    return;
+    #endif
 
     // finite-difference over velocity: skip = mjSTAGE_POS
     for( int i=istart; i<iend; i++ )
