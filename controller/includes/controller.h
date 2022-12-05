@@ -56,6 +56,7 @@ public:
     Eigen::MatrixXd eBT_eP;
     Eigen::MatrixXd temp_eK;
     Eigen::MatrixXd eAT_eP;
+    Eigen::MatrixXd eDqacc_Dctrl;
 
     mjModel* m = nullptr;
     mjData*  d = nullptr;
@@ -80,6 +81,8 @@ public:
     void CalculateUnderactuatedControlSetpoint();
 
     void CalculateLQR();
+
+    void CalculateDerivative();
 
     void Setup();
 

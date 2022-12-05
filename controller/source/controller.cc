@@ -179,8 +179,7 @@ void Controller::CalculateControlSetpoint()
     //==============================================================================================
     // #ifdef PRINTDEBUG
     std::cout << "Desired   " << eDesiredBodyForceMatrix.transpose() 
-    << "\nActual    " << eOutputBodyForce.transpose() << std::endl
-
+    << "\nActual    " << eOutputBodyForce.transpose()
     << "\nControl   " << eMotorForceMatrix.transpose() << std::endl;
 
     if((eDesiredBodyForceMatrix - eOutputBodyForce).isMuchSmallerThan(0.5))
@@ -200,6 +199,7 @@ void Controller::CalculateControlSetpoint()
 
 void Controller::CalculateUnderactuatedControlSetpoint()
 {
+    auto const step = 0.01;
     //============================================================
     //                  Iterate max 100 times
     //============================================================
@@ -208,17 +208,29 @@ void Controller::CalculateUnderactuatedControlSetpoint()
         //============================================================
         //              Move controller by increment
         //============================================================
+        this->CalculateDerivative();
+
+        eDqacc_Dctrl = Eigen::MatrixXd::Constant(m->nu, m->nv, 0.01);
+        eMotorForceMatrix = eMotorForceMatrix + (eDqacc_Dctrl * step);
 
         //============================================================
         //              Calculate new acc
         //============================================================
         mj_forward(m, d);
-        
+
         //============================================================
         //              Break if control is good
         //============================================================
-
+        if((eDesiredBodyForceMatrix - eOutputBodyForce).isMuchSmallerThan(0.5))
+        {
+            break;
+        }
     }
+}
+
+void Controller::CalculateDerivative()
+{
+
 }
 
 void Controller::CalculateLQR()
@@ -332,7 +344,9 @@ void Controller::CalculateLQR()
     this->eBT = eB.transpose(); //->  BU = influence of control
     this->eRinv = eR.inverse(); //->  actuator weights
 
-    uint16_t max_iterations = 100;
+    this->eP = this->eQ;
+
+    uint16_t max_iterations = 10;
     for (uint16_t i = 0; i < max_iterations; ++i)
     {
         eAT_eP = eAT*eP;
@@ -340,7 +354,7 @@ void Controller::CalculateLQR()
 
         eK = ((eBT_eP*eB)+eR).inverse() * eBT_eP*eA;
 
-        eP = eQ + eAT_eP*eA - eAT_eP*eB * eK;
+        eP = eQ + eAT_eP*eA - eAT_eP*(eB*eK);
     }
 
     //==============================================================

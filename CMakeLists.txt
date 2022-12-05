@@ -53,11 +53,17 @@ endif()
 
 # add_subdirectory(logger)
 add_subdirectory(controller)
+add_subdirectory(differenciator)
+
+target_link_libraries(Differenciator PUBLIC
+    mujoco::mujoco
+)
 
 target_link_libraries(Controller PUBLIC 
     # Logger
     libsimulate
     mujoco::mujoco
+    Differenciator
 )
 
 target_link_libraries( simulate

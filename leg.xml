@@ -135,7 +135,7 @@
     <actuator>
         <motor name="rootx"           gear="20"  joint="rootx"/>
         <motor name="rooty"           gear="20"  joint="rooty"/>
-        <motor name="rootz"           gear="250" joint="rootz"/>
+        <!-- <motor name="rootz"           gear="250" joint="rootz"/> -->
         <motor name="hip_x_right"     gear="40"  joint="hip_x_right"/>
         <motor name="hip_z_right"     gear="40"  joint="hip_z_right"/>
         <motor name="hip_y_right"     gear="120" joint="hip_y_right"/>
