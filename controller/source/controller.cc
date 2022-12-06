@@ -48,12 +48,13 @@ Controller::Controller(mjData * data, mjModel* model)
     ,Q_pos                   (new double [model->nv*model->nv])
     ,P                       (new double [(2*model->nv)*(2*model->nv)])
     ,actuated                (new int32_t [model->nv])
-    ,deriv_mem               (new double [model->nv*(2*model->nv+model->nu)+2*model->nv+model->nu])
+    ,deriv_mem               (new double [model->nu*model->nv])
     ,eInertiaMatrix             (data->actuator_moment, model->nv, model->nu)
     ,eMotorForceMatrix          (data->ctrl, model->nu, 1)
     ,eVelocityMatrix            (data->qvel, 1, model->nv)
     ,eDesiredBodyForceMatrix    (data->qfrc_inverse, model->nv, 1)
     ,eOutputBodyForce           (data->qfrc_actuator, model->nv, 1)
+    ,eOutputBodyAcceleration    (data->qacc, model->nv, 1)
     ,eTargetPoseControl         (this->targetPoseControl, model->nu, 1)
     ,eError_position            (this->error_position, 1, model->nv)
     ,eJac_CoM                   (this->jac_CoM, 3, model->nv)
@@ -66,7 +67,7 @@ Controller::Controller(mjData * data, mjModel* model)
     ,eQpos                      (this->Q_pos, model->nv, model->nv)
     ,eQ_joint                   (this->Q_joint, model->nv, model->nv)
     ,eP                         (this->P, 2*model->nv, 2*model->nv)
-    ,eDqacc_Dctrl               (this->deriv_mem + (2*model->nv*model->nv), model->nv, model->nu)
+    ,eDqacc_Dctrl               (this->deriv_mem, model->nv, model->nu)
 {
     this->eQ_joint = Eigen::MatrixXd::Identity(m->nv, m->nv);
     this->eR = Eigen::MatrixXd::Identity(m->nu, m->nu);
@@ -133,7 +134,7 @@ void Controller::loadTargetPose()
 void Controller::Setup()
 {
     this->CalculateControlSetpoint();
-    this->CalculateLQR();
+    // this->CalculateLQR();
 }
 
 void Controller::CalculateControlSetpoint()
@@ -173,7 +174,13 @@ void Controller::CalculateControlSetpoint()
     //                                  Calculate setpoints
     //==============================================================================================
     eMotorForceMatrix = eInertiaMatrix.fullPivLu().solve(eDesiredBodyForceMatrix);
- 
+    // #ifdef PRINTDEBUG
+    std::cout << "eInertiaMatrix   " << eInertiaMatrix << std::endl;
+    // #endif
+
+    d->ctrl[0] = 0.174516;
+    d->ctrl[1] = -0.119424;
+
     mj_forward(m, d);
 
     eTargetPoseControl = eMotorForceMatrix;
@@ -204,11 +211,61 @@ void Controller::CalculateControlSetpoint()
 
 void Controller::CalculateUnderactuatedControlSetpoint()
 {
+
+    Eigen::MatrixXd setpointOutputBodyAcceleration = eOutputBodyAcceleration;
+    std::cout << "setpointOutputBodyAcceleration\n" << setpointOutputBodyAcceleration << std::endl;
+    // std::cout << "setpointOutputBodyAcceleration.coeff(1,0) " << setpointOutputBodyAcceleration.coeff(1,0) << std::endl;
+
+    for(int i = 0 ; i < m->nu; i++)
+    {
+        d->ctrl[i] += 0.001;
+        mj_forward(m, d);
+        
+        for(int j = 0; j < m->nv; j++)
+        {
+            double value = eOutputBodyAcceleration.coeff(j,0) - setpointOutputBodyAcceleration.coeff(j,0);
+            eDqacc_Dctrl(j,i) = value;
+        }
+
+        d->ctrl[i] -= 0.001;
+    }
+    mj_forward(m, d);
+
+    //==============================================================================
+    //                              Sanity check
+    //==============================================================================
+    std::cout << "Calculated Jacobian\n" << eDqacc_Dctrl << "\n\n";
+
+    // std::cout << "Undisturbed control\n" << eMotorForceMatrix << std::endl;
+    std::cout << "Undisturbed control joints\n" << eOutputBodyAcceleration << std::endl;
+
+    Eigen::MatrixXd controlDisturbance(2, 1);
+    controlDisturbance(0, 0) = 0;
+    controlDisturbance(1, 0) = 0.001;
+
+    // Maybe eMotorForce dimensions need refactor?
+    eMotorForceMatrix = eMotorForceMatrix + controlDisturbance;
+    // std::cout << "Disturbed control\n" << eMotorForceMatrix << std::endl;
+
+    mj_forward(m, d);
+    std::cout << "Disturbed control joints\n" << eOutputBodyAcceleration << std::endl;
+
+    std::cout << "Estimated disturbed control joints\n" 
+    << (setpointOutputBodyAcceleration + ( eDqacc_Dctrl * controlDisturbance ) ) << std::endl;
+
+    //==============================================================================
+    //                      Get best correction possible
+    //==============================================================================
+    Eigen::MatrixXd eControlError = eDqacc_Dctrl.fullPivLu().solve(eDesiredBodyForceMatrix - eOutputBodyForce);
+
+    std::cout << "eControlError\n" << eControlError << "\n\n";
+    return;
+
     auto const step = 0.01;
     //============================================================
     //                  Iterate max 100 times
     //============================================================
-    for(int i = 0; i < 100; i++)
+    for(int i = 0; i < 2; i++)
     {
         //============================================================
         //              Move controller by increment
@@ -216,14 +273,25 @@ void Controller::CalculateUnderactuatedControlSetpoint()
         this->CalculateDerivative();
 
         std::cout << "Error\n" <<  (eDesiredBodyForceMatrix - eOutputBodyForce) << "\n\n";
-        std::cout << "derivatives\n" << eDqacc_Dctrl << "\n\n";
-        std::cout << "Actuator diff\n" << (eDesiredBodyForceMatrix - eOutputBodyForce).transpose() * eDqacc_Dctrl << "\n\n";
-        eMotorForceMatrix = eMotorForceMatrix + ((eDesiredBodyForceMatrix - eOutputBodyForce).transpose() * eDqacc_Dctrl).transpose();
+        std::cout << "\nI\n" << eDqacc_Dctrl << "\n\n";
+        
+        // auto correction = eDqacc_Dctrl.colPivHouseholderQr().solve(eDesiredBodyForceMatrix - eOutputBodyForce);
+
+        // https://eigen.tuxfamily.org/dox/group__TutorialLinearAlgebra.html
+        // Least Squares Solving
+        // auto correction = eDqacc_Dctrl.template bdcSvd<Eigen::ComputeThinU | Eigen::ComputeThinV>().solve(eDesiredBodyForceMatrix - eOutputBodyForce);
+
+        auto correction = Eigen::MatrixXd::Constant(m->nu, 1, 0.1);
+
+        std::cout << "correction\n" << correction << std::endl;
+        eMotorForceMatrix = eMotorForceMatrix + correction; //((eDesiredBodyForceMatrix - eOutputBodyForce).transpose() * eDqacc_Dctrl).transpose();
 
         //============================================================
         //              Calculate new acc
         //============================================================
         mj_forward(m, d);
+
+        std::cout << "Error corrected\n" <<  (eDesiredBodyForceMatrix - eOutputBodyForce) << "\n\n";
 
         //============================================================
         //              Break if control is good
@@ -232,9 +300,9 @@ void Controller::CalculateUnderactuatedControlSetpoint()
         // {
         //     break;
         // }
-        std::cout << "Desired   " << eDesiredBodyForceMatrix.transpose() 
-        << "\nActual    " << eOutputBodyForce.transpose()
-        << "\nControl   " << eMotorForceMatrix.transpose() << std::endl;
+        // std::cout << "Desired   " << eDesiredBodyForceMatrix.transpose() 
+        // << "\nActual    " << eOutputBodyForce.transpose()
+        // << "\nControl   " << eMotorForceMatrix.transpose() << std::endl;
         if((eDesiredBodyForceMatrix - eOutputBodyForce).isMuchSmallerThan(0.5))
         {
             std::cout << "\nFound a good setpoint" << std::endl;
@@ -406,7 +474,7 @@ void Controller::loop(mjData* currentState)
     // //==============================================================
     // //                  Apply control and step
     // //==============================================================
-    eMotorForceMatrix = eTargetPoseControl - eK * eError_state.transpose();
+    eMotorForceMatrix = eTargetPoseControl; // - eK * eError_state.transpose();
 
     applyControll(currentState);
 };

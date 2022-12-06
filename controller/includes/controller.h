@@ -34,6 +34,7 @@ public:
     Eigen::Map<Eigen::MatrixXd> eVelocityMatrix;
     Eigen::Map<Eigen::MatrixXd> eDesiredBodyForceMatrix;
     Eigen::Map<Eigen::MatrixXd> eOutputBodyForce;
+    Eigen::Map<Eigen::MatrixXd> eOutputBodyAcceleration;
     Eigen::Map<Eigen::MatrixXd> eTargetPoseControl;
     Eigen::Map<Eigen::MatrixXd> eError_position;
     Eigen::Map<Eigen::MatrixXd> eJac_CoM;

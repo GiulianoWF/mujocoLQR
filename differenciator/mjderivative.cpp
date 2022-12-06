@@ -97,7 +97,9 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
         // perturb selected target +
         d->ctrl[i] = dmain->ctrl[i] + eps;
 
+        #ifdef PRINTDEBUG
         std::cout << "Perturbed control " << i << "  " << d->ctrl[i] << std::endl;
+        #endif
 
         #ifdef LQROPTIMIZE
         // get cost for perturbation
@@ -109,10 +111,12 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
         mj_forwardSkip(m, d, mjSTAGE_VEL, 1);
 
         // copy and store +perturbation
+        #ifdef PRINTDEBUG
         for( int j=0; j<nv; j++ )
         {
             std::cout << "d->qacc[" << j << "] == " << d->qacc[j] << std::endl;
         }
+        #endif
 
         mju_copy(temp, d->qacc, nv);
 
@@ -128,8 +132,13 @@ void worker(const mjModel* m, const mjData* dmain, mjData* d, int id, mjtNum* de
         for( int j=0; j<nv; j++ )
         {
             deriv[2*nv*nv + i + j*nu] = (temp[j] - d->qacc[j])/(2*eps);
+            #ifdef PRINTDEBUG
             std::cout << deriv[2*nv*nv + i + j*nu] << " ";
+            #endif
         }
+        #ifdef PRINTDEBUG
+        std::cout << "\n\n";
+        #endif
 
         // undo perturbation
         cpMjData(m, d, dmain);
